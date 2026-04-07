@@ -10,11 +10,27 @@ def load_nlp():
 
 nlp = load_nlp()
 
+BASE_REPLACEMENTS = {
+    "color": "colour",
+    "honor": "honour",
+    "labor": "labour",
+    "favor": "favour",
+    "neighbor": "neighbour",
+    "behavior": "behaviour",
+    "center": "centre",
+    "theater": "theatre",
+    "catalog": "catalogue",
+    "dialog": "dialogue",
+    "defense": "defence",
+    "offense": "offence",
+}
+
 SAFE_REPLACEMENTS = {
     "color": "colour",
     "colors": "colours",
     "colored": "coloured",
     "coloring": "colouring",
+    "colorful": "colourful",
     "honor": "honour",
     "honors": "honours",
     "honored": "honoured",
@@ -23,6 +39,7 @@ SAFE_REPLACEMENTS = {
     "labors": "labours",
     "labored": "laboured",
     "laboring": "labouring",
+    "favor": "favour",
     "favorite": "favourite",
     "favorites": "favourites",
     "neighbor": "neighbour",
@@ -168,6 +185,19 @@ def convert_ambiguous(token) -> str | None:
 
     return None
 
+
+def replace_by_base(word: str) -> str | None:
+    lower = word.lower()
+
+    for base, replacement in sorted(BASE_REPLACEMENTS.items(), key=lambda x: len(x[0]), reverse=True):
+        if lower.startswith(base) and lower != base:
+            suffix = lower[len(base):]
+            new_word = replacement + suffix
+            return preserve_case(word, new_word)
+
+    return None
+
+
 def convert_token(token) -> tuple[str, bool]:
     lower = token.text.lower()
 
@@ -181,17 +211,12 @@ def convert_token(token) -> tuple[str, bool]:
         changed = new_text != token.text
         return new_text, changed
 
+    base_match = replace_by_base(token.text)
+    if base_match is not None:
+        return base_match, base_match != token.text
+
     return token.text, False
 
-def american_to_canadian(text: str) -> str:
-    doc = nlp(text)
-    output = []
-
-    for token in doc:
-        new_text, _ = convert_token(token)
-        output.append(new_text + token.whitespace_)
-
-    return "".join(output)
 
 def american_to_canadian_highlighted(text: str) -> str:
     doc = nlp(text)
@@ -223,7 +248,6 @@ input_text = st.text_area(
 
 if st.button("Convert"):
     if input_text.strip():
-        converted_text = american_to_canadian(input_text)
         highlighted_html = american_to_canadian_highlighted(input_text)
 
         st.subheader("Highlighted changes")

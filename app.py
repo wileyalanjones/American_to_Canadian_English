@@ -1,3 +1,4 @@
+import html
 import streamlit as st
 import spacy
 
@@ -7,11 +8,9 @@ st.set_page_config(page_title="American to Canadian English Converter", page_ico
 def load_nlp():
     return spacy.load("en_core_web_sm")
 
-
 nlp = load_nlp()
 
 SAFE_REPLACEMENTS = {
-    # -or -> -our
     "color": "colour",
     "colors": "colours",
     "colored": "coloured",
@@ -31,8 +30,6 @@ SAFE_REPLACEMENTS = {
     "neighborly": "neighbourly",
     "behavior": "behaviour",
     "behaviors": "behaviours",
-
-    # -er -> -re
     "center": "centre",
     "centers": "centres",
     "centered": "centred",
@@ -41,8 +38,6 @@ SAFE_REPLACEMENTS = {
     "theaters": "theatres",
     "liter": "litre",
     "liters": "litres",
-
-    # -ize / -yze
     "realize": "realise",
     "realizes": "realises",
     "realized": "realised",
@@ -53,14 +48,10 @@ SAFE_REPLACEMENTS = {
     "paralyze": "paralyse",
     "paralyzed": "paralysed",
     "paralyzing": "paralysing",
-
-    # -og -> -ogue
     "catalog": "catalogue",
     "catalogs": "catalogues",
     "dialog": "dialogue",
     "dialogs": "dialogues",
-
-    # doubled consonants
     "traveled": "travelled",
     "traveling": "travelling",
     "traveler": "traveller",
@@ -73,14 +64,11 @@ SAFE_REPLACEMENTS = {
     "modelers": "modellers",
     "labeled": "labelled",
     "labeling": "labelling",
-
-    # -ce / -se
     "defense": "defence",
     "defenses": "defences",
     "offense": "offence",
     "offenses": "offences",
 }
-
 
 def preserve_case(original: str, replacement: str) -> str:
     if original.isupper():
@@ -88,7 +76,6 @@ def preserve_case(original: str, replacement: str) -> str:
     if original.istitle():
         return replacement.title()
     return replacement
-
 
 def is_banking_check(token) -> bool:
     if token.text.lower() not in {"check", "checks"}:
@@ -115,7 +102,6 @@ def is_banking_check(token) -> bool:
             return True
 
     return False
-
 
 def is_measurement_meter(token) -> bool:
     if token.text.lower() not in {"meter", "meters"}:
@@ -149,7 +135,6 @@ def is_measurement_meter(token) -> bool:
 
     return False
 
-
 def convert_license(token) -> str | None:
     text = token.text.lower()
 
@@ -169,7 +154,6 @@ def convert_license(token) -> str | None:
 
     return None
 
-
 def convert_ambiguous(token) -> str | None:
     text = token.text.lower()
 
@@ -184,28 +168,48 @@ def convert_ambiguous(token) -> str | None:
 
     return None
 
+def convert_token(token) -> tuple[str, bool]:
+    lower = token.text.lower()
+
+    if lower in SAFE_REPLACEMENTS:
+        new_text = preserve_case(token.text, SAFE_REPLACEMENTS[lower])
+        return new_text, True
+
+    ambiguous = convert_ambiguous(token)
+    if ambiguous is not None:
+        new_text = preserve_case(token.text, ambiguous)
+        changed = new_text != token.text
+        return new_text, changed
+
+    return token.text, False
 
 def american_to_canadian(text: str) -> str:
     doc = nlp(text)
     output = []
 
     for token in doc:
-        lower = token.text.lower()
-
-        if lower in SAFE_REPLACEMENTS:
-            new_text = preserve_case(token.text, SAFE_REPLACEMENTS[lower])
-            output.append(new_text + token.whitespace_)
-            continue
-
-        ambiguous = convert_ambiguous(token)
-        if ambiguous is not None:
-            new_text = preserve_case(token.text, ambiguous)
-            output.append(new_text + token.whitespace_)
-            continue
-
-        output.append(token.text_with_ws)
+        new_text, _ = convert_token(token)
+        output.append(new_text + token.whitespace_)
 
     return "".join(output)
+
+def american_to_canadian_highlighted(text: str) -> str:
+    doc = nlp(text)
+    parts = []
+
+    for token in doc:
+        new_text, changed = convert_token(token)
+        escaped_text = html.escape(new_text)
+        escaped_ws = html.escape(token.whitespace_)
+
+        if changed:
+            parts.append(
+                f'<mark style="background-color:#fff3a3; padding:0.1em 0.2em; border-radius:0.2em;">{escaped_text}</mark>{escaped_ws}'
+            )
+        else:
+            parts.append(f"{escaped_text}{escaped_ws}")
+
+    return "".join(parts)
 
 
 st.title("🍁 American to Canadian English Converter")
@@ -220,7 +224,24 @@ input_text = st.text_area(
 if st.button("Convert"):
     if input_text.strip():
         converted_text = american_to_canadian(input_text)
-        st.subheader("Converted text")
-        st.text_area("Result", converted_text, height=220)
+        highlighted_html = american_to_canadian_highlighted(input_text)
+
+        st.subheader("Highlighted changes")
+        st.markdown(
+            f"""
+            <div style="
+                padding: 1rem;
+                border: 1px solid #ddd;
+                border-radius: 0.5rem;
+                background-color: white;
+                color: black;
+                line-height: 1.6;
+                white-space: pre-wrap;
+            ">
+                {highlighted_html}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     else:
         st.warning("Please enter some text first.")
